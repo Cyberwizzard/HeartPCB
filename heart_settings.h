@@ -44,6 +44,8 @@
 #error "FADER_UPDATE_FREQ is less than 3 times TIMER_FREQ (this means the fader will update way too often)"
 #endif
 
+#define barrier() asm volatile("": : :"memory")
+
 typedef enum {
   NONE,           // Do nothing, mark fader inactive when reaching target
   UPPER_INVERT,   // Invert the delta and fade out at the same pace, when reaching the lower bound turn inactive (single blink)
@@ -54,11 +56,11 @@ typedef enum {
 } effect_enum_t;
 
 typedef struct {
-  int16_t       delta;   // step size for the animation, note that this is a 16-bit value in order to do smooth sub-step fades
-  int8_t        active;  // if the fader for this LED is active
-  effect_enum_t reload;  // what to do when the end of the fade (up or down) is reached
-  uint8_t       upper;   // upper bound for the fader - default is 255
-  uint8_t       lower;   // lower bound for the fader - default is 0
+  volatile int16_t       delta;   // step size for the animation, note that this is a 16-bit value in order to do smooth sub-step fades
+  volatile int8_t        active;  // if the fader for this LED is active
+  volatile effect_enum_t reload;  // what to do when the end of the fade (up or down) is reached
+  volatile uint8_t       upper;   // upper bound for the fader - default is 255
+  volatile uint8_t       lower;   // lower bound for the fader - default is 0
 } fader_struct_t;
 
 typedef union {

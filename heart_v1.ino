@@ -1,9 +1,17 @@
 #include "heart_settings.h"
 #include "TimerOne.h"
 
+#define ERROR_BLINK_CNT 4000
+#define ERR_GENERIC 100
+#define ERR_NESTED_PWM 1
+#define ERR_NESTED_FADER 2
+#define ERR_ISR_ERROR 2
+
 volatile duint8_t led_pwm_val [NUM_LEDS]; // double uint8_t, the major byte is used for the PWM value
-volatile uint8_t  _err = 0;               // when non-zero, only the single LEDs will be lit to indicate trouble
-volatile uint8_t  _isr_running = 0;       // flag to track when the software PWM is not meeting the interrupt interval because it will result in a recursive interrupt call
+volatile uint8_t  _err = 0;               // when non-zero, an error occured and the LEDs will indicate what went wrong
+volatile int16_t  _err_cnt = 0;           // during error, blink the single LEDs
+volatile uint8_t  _isr_running = 0;       // flag to track when the software PWM is not meeting the interrupt interval (because it will result in an infinite recursive interrupt loop)
+volatile uint8_t  _isr_fader = 0;         // flag to track when the LED fading logic is not meeting the interrupt interval (because it will result in an infinite recursive interrupt loop)
 uint8_t           _pwm_step = 0;          // PWM step counter for all LEDs
 volatile uint16_t fader_interval_cnt = 0; // Faders are updated every ANI_INTERVAL steps of the PWM interrupt
 
@@ -11,14 +19,14 @@ volatile uint16_t fader_interval_cnt = 0; // Faders are updated every ANI_INTERV
 fader_struct_t fader [NUM_LEDS];
 
 #if 1
-#define NUM_MEASUREMENTS 20
+#define NUM_MEASUREMENTS 100
 #define MEASUREMENT_INIT  { Serial.begin(9600); Serial.println("Profiling active"); delay(100); }
 #define MEASUREMENT_START { if(measure_start < NUM_MEASUREMENTS) { starts[measure_start] = micros(); measure_start++; }}
 #define MEASUREMENT_STOP  { if(measure_stop < NUM_MEASUREMENTS) { stops[measure_stop] = micros(); measure_stop++; }}
 #define MEASUREMENT_PRINT { if(measure_stop >= NUM_MEASUREMENTS && measure_stop != 127) { \
   measure_stop = 127;                                                                     \
   Serial.println("Profiling (duration, interval):");                                      \
-  for(int __i = 0; __i < 20; __i++) {                                                     \
+  for(int __i = 0; __i < NUM_MEASUREMENTS; __i++) {                                       \
     unsigned long dur = stops[__i] - starts[__i];                                         \
     Serial.print(dur); Serial.print(" us, ");                                             \
     if(__i > 0) {                                                                         \
@@ -38,7 +46,7 @@ fader_struct_t fader [NUM_LEDS];
 // Profiling code; records the start and stop times of the ISR
 volatile unsigned long starts [NUM_MEASUREMENTS];
 volatile unsigned long stops  [NUM_MEASUREMENTS];
-volatile int           measure_start, measure_stop;
+volatile uint8_t       measure_start, measure_stop;
 
 void setup() {
   // configure relevant pins as outputs
@@ -48,8 +56,11 @@ void setup() {
 
   //Serial.begin(9600);
   MEASUREMENT_INIT;
-  Serial.print(TIMER_INTERVAL_US);
-  Serial.println("us PWM interval");
+ // Serial.print(TIMER_INTERVAL_US);
+ // Serial.println("us PWM interval");
+ // Serial.print(FADER_UPDATE_TICKS);
+ // Serial.println("ticks for fader");
+ // delay(2000);
 
   led_pwm_val[1].major = 120;
   led_pwm_val[2].major = 40;
@@ -72,7 +83,7 @@ void setup() {
   
   // Use timer1 for the intervals for the software PWM and faders
   Timer1.initialize(TIMER_INTERVAL_US);      // initialize timer1 and set to a high pace interval
-  Timer1.attachInterrupt(callback, 85);          // attaches callback() as a timer overflow interrupt
+  Timer1.attachInterrupt(callback, 65);      // attaches callback() as a timer overflow interrupt
 
   Serial.println("OK2");
 }
@@ -92,11 +103,11 @@ void animate_run_around(const int8_t setup = 1, const int8_t dir = 1, const int8
   const uint8_t fade_upper = 255;          // Upper boundary for bright LEDs
   const uint8_t fade_up_start = 200;       // Runners set this goal for their LED, causing a soft-start
 
-  if(runners < 1 || runners > 8) { _err = 1; return; }
+  if(runners < 1 || runners > 8) { _err = ERR_GENERIC; return; }
   // Make an array to hold the indexes of the 'runners'
   //uint8_t *li = (uint8_t *)malloc(runners * sizeof(uint8_t));
   uint8_t li [8];
-  //if(*li == -1) { _err = 1; return; }
+  //if(*li == -1) { _err = ERR_GENERIC; return; }
   // Distribute runners around the heart to begin
   for(int8_t i=0; i<runners; i++) {
     li[i] = (NUM_LEDS * i) / runners;
@@ -124,11 +135,14 @@ void animate_run_around(const int8_t setup = 1, const int8_t dir = 1, const int8
       // Apply the current status before moving the runner
       if(erasers && odd) {
         // Eraser runner, fade the current LED out (if it wasn't off before)
+        fader[led].active = 0;
+        barrier(); // Barrier after disabling the fader; makes sure the fader is inactive while settings change
         led_pwm_val[led].major = fade_lower;
         led_pwm_val[led].minor = 0;
-        fader[led].active = 0;
       } else {
         // Normal runner, fade current LED in
+        fader[led].active = 0;
+        barrier(); // Barrier after disabling the fader; makes sure the fader is inactive while settings change
         fader[led].reload = UPPER_INVERT;
         fader[led].delta = fade_speed_major << 8;
         fader[led].active = 1;
@@ -190,42 +204,103 @@ void loop() {
 void callback() {
   // Detect if this function was pre-empted by the current interrupt; if so the PWM is failing, switch to error mode
   if(_isr_running)
-    _err = 1;
+    _err = ERR_NESTED_PWM;
   
   if(_err) {
-    // Error mode, drive 2 LEDs on to indicate something went wrong
-    for(uint8_t el=PIN_LED_START; el<PIN_LED_END; el++) {
+    // Error mode, blink 2 LEDs on to indicate something went wrong
+    // Start by driving all LEDs off except for the LED indicating the problem.
+    for(uint8_t l=0, el=PIN_LED_START; el<PIN_LED_END; el++, l++) {
       if(el != PIN_LED_ERR0 && el != PIN_LED_ERR1) {
-        digitalWrite(el, HIGH);
+        digitalWrite(el, (l != _err) ? HIGH : LOW); // Leave the LED on that indicates the problem
       }
     }
-    digitalWrite(PIN_LED_ERR0, LOW);
-    digitalWrite(PIN_LED_ERR1, LOW);
+    // Blink the 2 indicator LEDs
+    digitalWrite(PIN_LED_ERR0, (_err_cnt > 0) ? LOW : HIGH);
+    digitalWrite(PIN_LED_ERR1, (_err_cnt > 0) ? LOW : HIGH);
+
+    // Increase the counter used to blink the LEDs
+    _err_cnt++;
+    if(_err_cnt >= ERROR_BLINK_CNT) _err_cnt = -ERROR_BLINK_CNT;
 
     return;
   } else {
-    // ---------------------------------- software PWM -------------------------------------------
+    // -----------------------------------------------------------------------------------------------
+    // --                                     software PWM                                          --
+    // -- Note: has to complete in 1 interval of the Timer1 interrupt, as tracked by _isr_running.  --
+    // --       When this deadline is not met, infinite interrupt recursion would crash the AVR,    --
+    // --       so instead _err is set to stop this interrupt handler until reset.                  --
+    // -- Note 2: 
+    // -----------------------------------------------------------------------------------------------
     // Mark this Interrupt-Service-Routine (ISR) active
     _isr_running = 1;
 
+    // Enable interrupts again; the PWM logic is guarded against nesting via _isr_running and fader logic (which takes 3 to 4 times longer) is guarded against nesting via _isr_fader
+    // WARNING: this means from this point on, nested interrupts can occur!!!
+    sei();
+
     MEASUREMENT_START;
+
+
     
     // Increase PWM counter
     _pwm_step++;
     
     // Do PWM per LED
+    // Note: since digitalWrite is very slow, we read the pin status registers, manipulate the copy and write back the result
+    // Read pin 0..7 aka PORT D
+    uint8_t pin0_7  = PORTD;
+    uint8_t pin8_13 = PORTB;
+    
     for(uint8_t l=0, li=PIN_LED_START; l<NUM_LEDS; l++, li++) {
       // Note: this boundary provides support for switching LEDs completely off, but completely on (255/255) will result in a single low cycle during PWM
       if(_pwm_step >= led_pwm_val[l].major) {
-        //digitalWrite(li, HIGH);
+        //digitalWrite(li, HIGH); // slow - replaced by direct port manipulation below
+        if(li <= 7) {
+          // Pin in port D, turn on
+          pin0_7 |= 0x1 << li;
+        } else if(li <= 13) {
+          // Pin in port B, turn on
+          pin8_13 |= 0x1 << (li - 8);
+        } else {
+          // Invalid pin number, go into error mode
+          _err = ERR_ISR_ERROR;
+        }
       } else {
-        //digitalWrite(li, LOW);
+        //digitalWrite(li, LOW); // slow - replaced by direct port manipulation below
+        if(li <= 7) {
+          // Pin in port D, turn off
+          pin0_7 &= ~(0x1 << li);
+        } else if(li <= 13) {
+          // Pin in port B, turn on
+          pin8_13 &= ~(0x1 << (li - 8));
+        } else {
+          // Invalid pin number, go into error mode
+          _err = ERR_ISR_ERROR;
+        }
       }
     }
 
+    // Apply the new port pin states
+    PORTD = pin0_7;
+    PORTB = pin8_13;
+
     // ------------------------------- fader controls -------------------------------------------
+    // Increase the counter for the fader interval
     fader_interval_cnt++;
+
+    MEASUREMENT_STOP;
+
     if(fader_interval_cnt >= FADER_UPDATE_TICKS) {
+      // Error handling; when this logic is so slow it results in nested fader logic, the program will lock up
+      if(_isr_fader) {
+        _err = ERR_NESTED_FADER;
+        return;
+      }
+      
+      // Update fader; mark fader ISR active and PWM ISR complete
+      _isr_fader = 1;    // Note: needs to be set *before* clearing _isr_running
+      _isr_running = 0;
+      
       // Loop over all faders and update where applicable
       for(uint8_t l=0; l<NUM_LEDS; l++) {
         fader_struct_t * const f = (fader_struct_t * const)&fader[l];
@@ -313,16 +388,21 @@ void callback() {
             }
           }
         }
+
+        // End of fader updates; clear the flag (note: _isr_running is not touched as it was cleared before and might have been set again in a nested interrupt)
+        _isr_fader = 0;
       }
 
       // Clear the counter
       fader_interval_cnt = 0;
+
+      
+    } else {
+      // No fader update, clear ISR active flag for the PWM logic part
+      _isr_running = 0;
     }
 
-    MEASUREMENT_STOP;
-
-    // Clear ISR active flag
-    _isr_running = 0;
+    
   }
 }
 
