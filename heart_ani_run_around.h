@@ -18,9 +18,9 @@ typedef struct {
   const uint8_t  fade_upper;          // Upper boundary for bright LEDs
   const uint8_t  fade_up_start;       // Runners set this goal for their LED, causing a soft-start, set to fade_upper to do a hard start
   const uint8_t  offset;              // LED offset for the start position of the runners, should be 0 by default, values larger than NUM_LEDS - 1 make no sense
-  const uint16_t delay_base_ms;       // Delay between steps in the animation, start value
-  const uint16_t delay_tgt_ms;        // Delay between steps in the animation, target value
-  const uint16_t delay_step_ms;       // Step size to alter the delay between animation steps (always positive)
+        uint16_t delay_base_ms;       // Delay between steps in the animation, start value
+        uint16_t delay_tgt_ms;        // Delay between steps in the animation, target value
+        uint16_t delay_step_ms;       // Step size to alter the delay between animation steps (always positive)
         uint16_t delay_current_ms;    // Mutable current value of the delay in ms; set on the first run when setup == 1, use this to 
                                       // track what the animation step delay was when the animation function returns
 } run_around_setting_struct_t;
