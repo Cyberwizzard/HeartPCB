@@ -8,6 +8,64 @@
 #define NUM_LEDS 10
 #define PIN_LED_END (PIN_LED_START+NUM_LEDS)
 
+// PORTD masks for all pins, PORTD is for pin 0 to 7, corresponding to LED 0 (pin 2) to 6 (pin 7)
+static const uint8_t LED_MASKON_PORTD [6] = {
+  0x1 << 2,   // LED 0 = pin 2
+  0x1 << 3,
+  0x1 << 4,
+  0x1 << 5,
+  0x1 << 6,
+  0x1 << 7,   // LED 5 = pin 7
+};
+static const uint8_t LED_MASKOFF_PORTD [6] = {
+  ~(0x1 << 2),   // LED 0 = pin 2
+  ~(0x1 << 3),
+  ~(0x1 << 4),
+  ~(0x1 << 5),
+  ~(0x1 << 6),
+  ~(0x1 << 7),   // LED 5 = pin 7
+};
+
+// PORTB masks for all pins, PORTB is for pin 8 to 13, corresponding to LED 7 (pin 8) to 10 (pin 11)
+static const uint8_t LED_MASKON_PORTB [6] = {
+  0x1 << 0,   // LED 7 = pin 8
+  0x1 << 1,
+  0x1 << 2,
+  0x1 << 3,   // LED 10 = pin 11
+};
+static const uint8_t LED_MASKOFF_PORTB [6] = {
+  ~(0x1 << 0),   // LED 7 = pin 8
+  ~(0x1 << 1),
+  ~(0x1 << 2),
+  ~(0x1 << 3),   // LED 10 = pin 11
+};
+
+#define SOFT_PWM_LED(led_pin, led_brightness) {          \
+  if(_pwm_step >= led_brightness) {                      \
+    if(led_pin <= 7) {                                   \
+      /* Pin in port D, turn on */                       \
+      pin0_7 |= LED_MASKON_PORTD[led_pin - 2];           \
+    } else if(led_pin <= 13) {                           \
+      /* Pin in port B, turn on */                       \
+      pin8_13 |= LED_MASKON_PORTB[led_pin - 8];          \
+    } else {                                             \
+      /* Invalid pin number, go into error mode */       \
+      _err = ERR_ISR_ERROR;                              \
+    }                                                    \
+  } else {                                               \
+    if(led_pin <= 7) {                                   \
+      /* Pin in port D, turn off */                      \
+      pin0_7 &= LED_MASKOFF_PORTD[led_pin - 2];          \
+    } else if(led_pin <= 13) {                           \
+      /* Pin in port B, turn on */                       \
+      pin8_13 &= LED_MASKOFF_PORTB[led_pin - 8];         \
+    } else {                                             \
+      /* Invalid pin number, go into error mode */       \
+      _err = ERR_ISR_ERROR;                              \
+    }                                                    \
+  }                                                      \
+}
+
 // If something goes wrong, these 2 LEDs will be statically on
 #define PIN_LED_ERR0 2
 #define PIN_LED_ERR1 7
@@ -32,6 +90,14 @@
 // FIXME For some reason it seems the frequency is off by a factor three: at 50 Hz, a fader with delta set to major 5, in one second the value 250 should be reached, but it takes roughly 3 seconds instead...
 #define FADER_UPDATE_TICKS       (( FADER_UPDATE_INTERVAL_US ) / ( ( TIMER_INTERVAL_US ) * 3) )
 
+// The ISR has been profiled to take between 8us and 20us, together with overhead from other code, it turns out 34us is the minimum interval
+// needed to prevent nested interrupts from occuring. Note that only when SUPPORT_NESTED_ISR is defined, is it possible to get nested interrupts, without it ticks of the timer will simply be skipped.
+#define ISR_MINIMUM_INTERVAL_US 34
+
+// This define is only needed during development and benchmarking of the ISR (interrupt routine) to enable nested interrupts; after development it should be disabled
+#define SUPPORT_NESTED_ISR
+
+// Sanity: make sure the selected settings make sense
 #if FADER_UPDATE_FREQ > TIMER_FREQ
 #error "FADER_UPDATE_FREQ can not be higher than TIMER_FREQ (it also makes no sense)"
 #endif
