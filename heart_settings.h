@@ -1,74 +1,41 @@
+/**
+ * heart_settings.h - Heart PCB Project - Settings file for project
+ * 
+ * @author  Berend Dekens <berend@cyberwizzard.nl>
+ * @version 1
+ * @date    2018.04.13
+ * @license GNUGPLv3
+ */
+#ifndef _HEART_SETTINGS_H_
+#define _HEART_SETTINGS_H_
+
 #include "stdint.h"
 
-// When fading in up to a new lower bound on the LED brightness, use this speed for all animations
+// ------------------------- Debug Settings ----------------------------
+
+// Define to enable profiling support; slows down the program and enables serial debugging
+// Comment out when not debugging the project!
+#define SUPPORT_MEASUREMENTS
+
+// Define to enable measurements within the ISR; slows down the critical section of the interrupt routine so
+// only enable when optimizing the interrupt routine.
+// Comment out when not debugging the project!
+#define SUPPORT_ISR_MEASUREMENTS
+
+// ------------------------- LED Settings ----------------------------
+
+// When fading in up to a new lower bound on the LED brightness, use this speed for all animations.
+// This essentially is used when 'wiping' the previous LED brightness to the start state of the current animation.
 // Default: 5
 #define SETUP_FADE_SPEED_MAJOR 5
 
+// GPIO pin to LED mapping; by default LED0 is connected to pin 2, LED1 to pin 3 etc.
+// !!!WARNING!!!: DO NOT CHANGE THESE SETTINGS AS THE INTERRUPT LOGIC IS HARDCODED TO THE ORIGINAL SETTINGS
 #define PIN_LED_START 2
 #define NUM_LEDS 10
 #define PIN_LED_END (PIN_LED_START+NUM_LEDS)
 
-// PORTD masks for all pins, PORTD is for pin 0 to 7, corresponding to LED 0 (pin 2) to 6 (pin 7)
-static const uint8_t LED_MASKON_PORTD [6] = {
-  0x1 << 2,   // LED 0 = pin 2
-  0x1 << 3,
-  0x1 << 4,
-  0x1 << 5,
-  0x1 << 6,
-  0x1 << 7,   // LED 5 = pin 7
-};
-static const uint8_t LED_MASKOFF_PORTD [6] = {
-  ~(0x1 << 2),   // LED 0 = pin 2
-  ~(0x1 << 3),
-  ~(0x1 << 4),
-  ~(0x1 << 5),
-  ~(0x1 << 6),
-  ~(0x1 << 7),   // LED 5 = pin 7
-};
-
-// PORTB masks for all pins, PORTB is for pin 8 to 13, corresponding to LED 7 (pin 8) to 10 (pin 11)
-static const uint8_t LED_MASKON_PORTB [6] = {
-  0x1 << 0,   // LED 7 = pin 8
-  0x1 << 1,
-  0x1 << 2,
-  0x1 << 3,   // LED 10 = pin 11
-};
-static const uint8_t LED_MASKOFF_PORTB [6] = {
-  ~(0x1 << 0),   // LED 7 = pin 8
-  ~(0x1 << 1),
-  ~(0x1 << 2),
-  ~(0x1 << 3),   // LED 10 = pin 11
-};
-
-#define SOFT_PWM_LED(led_pin, led_brightness) {          \
-  if(_pwm_step >= led_brightness) {                      \
-    if(led_pin <= 7) {                                   \
-      /* Pin in port D, turn on */                       \
-      pin0_7 |= LED_MASKON_PORTD[led_pin - 2];           \
-    } else if(led_pin <= 13) {                           \
-      /* Pin in port B, turn on */                       \
-      pin8_13 |= LED_MASKON_PORTB[led_pin - 8];          \
-    } else {                                             \
-      /* Invalid pin number, go into error mode */       \
-      _err = ERR_ISR_ERROR;                              \
-    }                                                    \
-  } else {                                               \
-    if(led_pin <= 7) {                                   \
-      /* Pin in port D, turn off */                      \
-      pin0_7 &= LED_MASKOFF_PORTD[led_pin - 2];          \
-    } else if(led_pin <= 13) {                           \
-      /* Pin in port B, turn on */                       \
-      pin8_13 &= LED_MASKOFF_PORTB[led_pin - 8];         \
-    } else {                                             \
-      /* Invalid pin number, go into error mode */       \
-      _err = ERR_ISR_ERROR;                              \
-    }                                                    \
-  }                                                      \
-}
-
-// If something goes wrong, these 2 LEDs will be statically on
-#define PIN_LED_ERR0 2
-#define PIN_LED_ERR1 7
+// ------------------------- PWM and fader Settings ----------------------------
 
 // PWM frequency, setting this to 100 means PWM_STEPS * 100 calls per second to callback() to update the PWM, and LEDs will turn off and on 100 times a second
 // More is better (prevents flicker), but too high will eat up CPU without leaving time for the animation resulting in choppy animations
@@ -90,12 +57,41 @@ static const uint8_t LED_MASKOFF_PORTB [6] = {
 // FIXME For some reason it seems the frequency is off by a factor three: at 50 Hz, a fader with delta set to major 5, in one second the value 250 should be reached, but it takes roughly 3 seconds instead...
 #define FADER_UPDATE_TICKS       (( FADER_UPDATE_INTERVAL_US ) / ( ( TIMER_INTERVAL_US ) * 3) )
 
-// The ISR has been profiled to take between 8us and 20us, together with overhead from other code, it turns out 34us is the minimum interval
+// DO NOT CHANGE - The ISR has been profiled to take between 8us and 20us, together with overhead from other code, it turns out 34us is the minimum interval
 // needed to prevent nested interrupts from occuring. Note that only when SUPPORT_NESTED_ISR is defined, is it possible to get nested interrupts, without it ticks of the timer will simply be skipped.
 #define ISR_MINIMUM_INTERVAL_US 34
 
 // This define is only needed during development and benchmarking of the ISR (interrupt routine) to enable nested interrupts; after development it should be disabled
 #define SUPPORT_NESTED_ISR
+
+// ------------------------- Error Mode Settings ----------------------------
+
+// If something goes wrong, these 2 LEDs will be statically on
+#define PIN_LED_ERR0 2
+#define PIN_LED_ERR1 7
+
+// To indicate that an error occured, count up to this value using the ISR to blink the LEDs on PIN_LED_ERR0 and PIN_LED_ERR1
+#define ERROR_BLINK_CNT 4000
+
+// Error codes:
+// Code 100 - Generic error; because the value is so high, no other LEDs will light up
+#define ERR_GENERIC 100
+// Code 1 - The PWM ISR got nested, which means its too slow to function correctly at the required refresh speed
+#define ERR_NESTED_PWM 1
+// Code 2 - The fader ISR got nested, which means its too slow to function correctly at the required refresh speed
+#define ERR_NESTED_FADER 2
+// Code 3 - Other error in the ISR
+#define ERR_ISR_ERROR 3
+// Code 4 - The PWM frequency is set too high resulting in an ISR interval which is lower than the known working limit
+#define ERR_ISR_INTERVAL_TOO_SMALL 4
+
+
+
+
+
+
+
+
 
 // Sanity: make sure the selected settings make sense
 #if FADER_UPDATE_FREQ > TIMER_FREQ
@@ -158,3 +154,4 @@ static inline void setup_fade_to_lower(fader_struct_t *f, duint8_t *val) {
   }
 }
 
+#endif _HEART_SETTINGS_H_
