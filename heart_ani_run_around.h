@@ -6,8 +6,8 @@
  * @date    2018.04.13
  * @license GNUGPLv3
  */
-#ifndef _HEART_RUN_AROUND_H_
-#define _HEART_RUN_AROUND_H_
+#ifndef _HEART_ANI_RUN_AROUND_H_
+#define _HEART_ANI_RUN_AROUND_H_
 
 #include "heart_settings.h"
 #include "Arduino.h"

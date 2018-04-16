@@ -2,6 +2,7 @@
 #include "heart_isr.h"
 #include "heart_profiling.h"
 #include "heart_ani_run_around.h"
+#include "heart_ani_dropfill.h"
 #include "TimerOne.h"
 
 void setup() {
@@ -93,13 +94,16 @@ void loop() {
 
 
   //for(int i=0; i<10; i++) animate_run_around(i == 0, 1, 4, 0, 1, &run_around_erasing); // 2 runners, one erasers
-  for(int i=0; i<10; i++) animate_run_around(i == 0, 1, 2, 0, 0, &run_around_fade2); // 2 runners
   
+  /*
+  for(int i=0; i<10; i++) animate_run_around(i == 0, 1, 2, 0, 0, &run_around_fade2); // 2 runners
   if(run_around_fade2.delay_tgt_ms == run_around_fade2.delay_current_ms) {
     uint16_t swap = run_around_fade2.delay_tgt_ms;
     run_around_fade2.delay_tgt_ms = run_around_fade2.delay_base_ms;
     run_around_fade2.delay_base_ms = swap;
-  }
+  } */
+  
+  animate_fill();
 }
 
 

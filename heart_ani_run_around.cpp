@@ -119,7 +119,7 @@ void animate_run_around(const int8_t setup = 1, const int8_t dir = 1, const int8
     
     // Update delay amount if requested
     if(delay_delta != 0 && s->delay_current_ms != delay_tgt_ms) {
-      Serial.print("delay: "); Serial.println(s->delay_current_ms);
+      //Serial.print("delay: "); Serial.println(s->delay_current_ms);
       // Compute the absolute gap between the current delay and the target delay
       uint16_t gap = (s->delay_current_ms < delay_tgt_ms) ? (delay_tgt_ms - s->delay_current_ms) : (s->delay_current_ms - delay_tgt_ms);
       if(gap > s->delay_step_ms) {
@@ -129,7 +129,7 @@ void animate_run_around(const int8_t setup = 1, const int8_t dir = 1, const int8
         // The gap between the current delay and the target is smaller than the step size, cap it
         s->delay_current_ms = delay_tgt_ms;
       }
-      Serial.print("delay: "); Serial.println(s->delay_current_ms);
+      //Serial.print("delay: "); Serial.println(s->delay_current_ms);
     }
   }
 }
