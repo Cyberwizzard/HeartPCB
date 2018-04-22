@@ -19,6 +19,6 @@
  * @param delay_fill_ms Whether alternating runners move in the same direction or counter-directions
  * @param delay_drop_ms Whether alternating runners should 'erasers'; these runners fade out LEDs rather than in
  */
-void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000, const int16_t delay_fill_ms = 200, const int16_t delay_drop_ms = 200);
+void animate_dropfill(const int8_t setup = 1, const int16_t delay_between_ms = 3000, const int16_t delay_fill_ms = 200, const int16_t delay_drop_ms = 200);
 
 #endif

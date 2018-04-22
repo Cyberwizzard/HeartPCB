@@ -3,11 +3,14 @@
 #include "heart_profiling.h"
 #include "heart_ani_run_around.h"
 #include "heart_ani_dropfill.h"
+#include "heart_ani_twinkle.h"
 #include "TimerOne.h"
 
 void setup() {
   // configure relevant pins as outputs
   for(uint8_t l=0; l<NUM_LEDS; l++) pinMode(PIN_LED_START+l, OUTPUT);
+  pinMode(PIN_BTN0, INPUT);
+  pinMode(PIN_BTN1, INPUT);
 
   // Initialize measurement support for profiling (when enabled) - also inits Serial
   MEASUREMENT_INIT;
@@ -17,12 +20,12 @@ void setup() {
   SERPRINT(FADER_UPDATE_TICKS);
   SERPRINTLN(" ticks between faders");
 
-  led_pwm_val[1].major = 120;
-  led_pwm_val[2].major = 40;
-  led_pwm_val[3].major = 5;
-  led_pwm_val[4].major = 180;
-  led_pwm_val[5].major = 255;
-  //led_pwm_val[6].major = 120;
+  SET_LED_BRIGHTNESS_MAJOR(1, 120);
+  SET_LED_BRIGHTNESS_MAJOR(2, 40);
+  SET_LED_BRIGHTNESS_MAJOR(3, 5);
+  SET_LED_BRIGHTNESS_MAJOR(4, 180);
+  SET_LED_BRIGHTNESS_MAJOR(5, 255);
+
   fader[6].delta = 256 * 5;
   fader[6].active = 1;
   fader[6].reload = JUMP;
@@ -77,12 +80,12 @@ void setup() {
 
 void loop() {
   MEASUREMENT_PRINT;
-  // put your main code here, to run repeatedly:
-  //for(int i=0; i<10; i++) animate_run_around(i == 0);
-  
-  //for(int i=0; i<10; i++) animate_run_around(i == 0, -1); // 1 runner, reverse direction
-
-  //for(int i=0; i<10; i++) animate_run_around(i == 0, 1, 2); // 2 runners
+  // Animation of 1 runner going around the heart
+  animate_run_around();
+  // Setup, loop, 1 runner, reverse direction
+  animate_run_around(1, 1, -1); 
+  // Setup, loop, 2 runners
+  animate_run_around(1, 1, 1, 2);
 
   //for(int i=0; i<10; i++) animate_run_around(i == 0, 1, 3); // 3 runners
   //for(int i=0; i<10; i++) animate_run_around(i == 0, 1, 4); // 4 runners
@@ -103,7 +106,11 @@ void loop() {
     run_around_fade2.delay_base_ms = swap;
   } */
   
-  animate_fill();
+  // Slowly filling heart
+  animate_dropfill();
+
+  // Starry twinkle
+  animate_twinkle();
 }
 
 

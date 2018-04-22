@@ -10,6 +10,7 @@
 #include "heart_settings.h"
 #include "heart_isr.h"
 #include "heart_profiling.h"
+#include "heart_delay.h"
 #include "Arduino.h"
 
 // Only support measuring inside the ISR when measuments in general are enabled
@@ -99,6 +100,9 @@ static const uint8_t LED_MASKOFF_PORTB [6] = {
   ~(0x1 << 3),   // LED 10 = pin 11
 };
 
+static const uint8_t BTN0_MASK = 0x1 << (PIN_BTN0 - 8);
+static const uint8_t BTN1_MASK = 0x1 << (PIN_BTN1 - 8);
+
 #ifdef SUPPORT_NESTED_ISR
 // Since nested interrupts can only occur when explicitly enabled, remove the tracking for nested interrupts when not needed
 volatile uint8_t  _isr_running = 0;       // flag to track when the software PWM is not meeting the interrupt interval (because it will result in an infinite recursive interrupt loop)
@@ -116,10 +120,18 @@ volatile int16_t  _err_cnt = 0;           // during error, blink the single LEDs
 volatile uint8_t  _err = 0; // when non-zero, an error occured and the LEDs will indicate what went wrong
 
 // Shared LED brightness tracking
-volatile duint8_t led_pwm_val [NUM_LEDS]; // double uint8_t, the major byte is used for the PWM value
+volatile duint8_t _led_brightness [NUM_LEDS]; // double uint8_t, the major byte indicates the PWM value
+volatile uint8_t  _raw_pwm_val    [NUM_LEDS]; // scaled value from _led_brightness, to allow dimming
+volatile uint8_t  _raw_scaler = 0;            // scale factor (shift) for _raw_pwm_val
 
 // special type controlling the faders per LED
 fader_struct_t fader [NUM_LEDS];
+
+// Button state tracking
+const uint8_t     btn_debounce_limit = 2; // Number of consecutive readings to debounce the press 
+volatile uint8_t  _btn0_down_cnt = 0;
+volatile uint8_t  _btn1_down_cnt = 0;
+volatile uint8_t  _btn0_active = 0;
 
 /**
  * Timer interrupt routine; provides software PWM and LED fading logic, needs to be fast in order to
@@ -184,7 +196,7 @@ void heart_isr() {
       // Generic loop, optimized to run between 24us and 36us
       for(uint8_t l=0, li=PIN_LED_START; l<NUM_LEDS; l++, li++) {
         // Note: this boundary provides support for switching LEDs completely off, but completely on (255/255) will result in a single low cycle during PWM
-        if(_pwm_step >= led_pwm_val[l].major) {
+        if(_pwm_step >= _raw_pwm_val[l]) {
           //digitalWrite(li, HIGH); // slow - replaced by direct port manipulation below
           if(li <= 7) {
             // Pin in port D, turn on
@@ -216,16 +228,16 @@ void heart_isr() {
       }
     #else
       // Unrolled loop resulting in removal of most of the if-then-else, optimized to run between 8us and 20us
-      SOFT_PWM_LED( 2, led_pwm_val[0].major); // LED 0, pin 2
-      SOFT_PWM_LED( 3, led_pwm_val[1].major); // LED 1, pin 3
-      SOFT_PWM_LED( 4, led_pwm_val[2].major); // LED 2, pin 4
-      SOFT_PWM_LED( 5, led_pwm_val[3].major); // LED 3, pin 5
-      SOFT_PWM_LED( 6, led_pwm_val[4].major); // LED 4, pin 6
-      SOFT_PWM_LED( 7, led_pwm_val[5].major); // LED 5, pin 7
-      SOFT_PWM_LED( 8, led_pwm_val[6].major); // LED 6, pin 8
-      SOFT_PWM_LED( 9, led_pwm_val[7].major); // LED 7, pin 9
-      SOFT_PWM_LED(10, led_pwm_val[8].major); // LED 8, pin 10
-      SOFT_PWM_LED(11, led_pwm_val[9].major); // LED 9, pin 11
+      SOFT_PWM_LED( 2, _raw_pwm_val[0]); // LED 0, pin 2
+      SOFT_PWM_LED( 3, _raw_pwm_val[1]); // LED 1, pin 3
+      SOFT_PWM_LED( 4, _raw_pwm_val[2]); // LED 2, pin 4
+      SOFT_PWM_LED( 5, _raw_pwm_val[3]); // LED 3, pin 5
+      SOFT_PWM_LED( 6, _raw_pwm_val[4]); // LED 4, pin 6
+      SOFT_PWM_LED( 7, _raw_pwm_val[5]); // LED 5, pin 7
+      SOFT_PWM_LED( 8, _raw_pwm_val[6]); // LED 6, pin 8
+      SOFT_PWM_LED( 9, _raw_pwm_val[7]); // LED 7, pin 9
+      SOFT_PWM_LED(10, _raw_pwm_val[8]); // LED 8, pin 10
+      SOFT_PWM_LED(11, _raw_pwm_val[9]); // LED 9, pin 11
 
       // Guard against changes in the design which would mismatch with the original pin layout
       #if NUM_LEDS != 10
@@ -249,6 +261,50 @@ void heart_isr() {
       fader_update_ptr = NUM_LEDS - 1;
       // Clear the counter
       fader_interval_cnt = 0;
+
+      // Sample and handle the button inputs at the same frequency as the faders get updated
+      volatile uint8_t btn0_pressed = PINB & BTN0_MASK;
+      volatile uint8_t btn1_pressed = PINB & BTN1_MASK;
+      // Only process pin state when the button 0 press logic is not active
+      if(!_btn0_active) {
+        if(btn0_pressed) {
+          if(_btn0_down_cnt < btn_debounce_limit) {
+            _btn0_down_cnt++;
+          } else if(_btn0_down_cnt == btn_debounce_limit){
+            // First trigger of the button 0 press - change the PWM scale
+            if(GET_BRIGHTNESS_SCALE < 5) {
+              SET_BRIGHTNESS_SCALE(GET_BRIGHTNESS_SCALE + 1);
+            } else {
+              // Reset to full brightness
+              SET_BRIGHTNESS_SCALE(0);
+            }
+
+            // Increase the counter to only run this logic once
+            _btn0_down_cnt = btn_debounce_limit+1;
+
+            // Mark btn0 active; during the fader updates, the PWM values are recomputed, also for inactive faders
+            _btn0_active = 1;
+          }
+        } else {
+          _btn0_down_cnt = 0;
+        }
+      }
+
+      // Handle if button 1 is pressed
+      if(btn1_pressed) {
+        if(_btn1_down_cnt < btn_debounce_limit) {
+          _btn1_down_cnt++;
+        } else if(_btn1_down_cnt == btn_debounce_limit){
+          // Disable the animation delay so it aborts
+          disable_heart_delay();
+
+          // Increase the counter to only run this logic once
+          _btn1_down_cnt = btn_debounce_limit+1;
+        }
+      } else {
+        _btn1_down_cnt = 0;
+      }
+
       // When measuring PWM + fader, on the first fader we missed the PWM part, but measure the fader part to make sure the stops match up
       MEASUREMENT_ISR_ALL_START;
     }
@@ -265,103 +321,114 @@ void heart_isr() {
       // Update fader; mark fader ISR active and PWM ISR complete
       _isr_fader = 1;    // Note: needs to be set *before* clearing _isr_running
       _isr_running = 0;
-      
-      // Update the fader which fader_update_ptr points to
-      {
-        uint8_t l = fader_update_ptr; // FIXME rename l to fader_update_ptr
-        //for(uint8_t l=0; l<NUM_LEDS; l++) {
-        fader_struct_t * const f = (fader_struct_t * const)&fader[fader_update_ptr];
-        const effect_enum_t    e = f->reload;
-        if(f->active) {
-          // Use a 32 bit to detect over and underflow on the 16 bit PWM counter (note that the uper 8 bits are used for PWM, this allows sub-stepping)
-          int32_t newraw = (int32_t)led_pwm_val[fader_update_ptr].raw + (int32_t)f->delta;
-          int16_t newmajor = newraw >> 8; // Remove the lower byte to obtain the PWM value (note that the first 8 bits are valid, upper bits are only needed to detect overflow)
-          if(newmajor > f->upper) {
-            // Upper-bound tripped, handle effect
-            switch(e) {
-              case NONE:
-                // No effect, cap to upper and hold
-                led_pwm_val[fader_update_ptr].major = f->upper;
-                led_pwm_val[fader_update_ptr].minor = 0;
-                f->active = 0;
-                break;
-              case JUMP:
-                // Jump to lower bound
-                led_pwm_val[fader_update_ptr].major = f->lower;
-                led_pwm_val[fader_update_ptr].minor = 0;
-                break;
-              case INVERT:
-              case UPPER_INVERT:
-                // Cap to upper - delta (upper bound was used last update)
-                led_pwm_val[fader_update_ptr].major = f->upper - (f->delta >> 8);
-                led_pwm_val[fader_update_ptr].minor = 0 - (f->delta & 0xFF);
-                f->delta = -f->delta;
-                break;
-              case LOWER_INVERT:
-                // Already inverted once, disable fader
-                led_pwm_val[fader_update_ptr].major = f->upper;
-                led_pwm_val[fader_update_ptr].minor = 0;
-                f->active = 0;
-                break;
-            }
-          } else if(newmajor < f->lower) {
-            // Lower bound tripped, handle effect
-            switch(e) {
-              case NONE:
-                // No effect, cap to lower and hold
-                led_pwm_val[fader_update_ptr].major = f->lower;
-                led_pwm_val[fader_update_ptr].minor = 0;
-                f->active = 0;
-                break;
-              case JUMP:
-                // Jump to upper bound
-                led_pwm_val[fader_update_ptr].major = f->upper;
-                led_pwm_val[fader_update_ptr].minor = 0;
-                break;
-              case INVERT:
-              case LOWER_INVERT:
-                // Cap to lower + delta (lower bound was used last update)
-                f->delta = -f->delta; // First invert delta, its now positive
-                led_pwm_val[fader_update_ptr].major = f->lower + (f->delta >> 8);
-                led_pwm_val[fader_update_ptr].minor = (f->delta & 0xFF);
-                break;
-              case UPPER_INVERT:
-                // Already inverted once, disable fader
-                led_pwm_val[fader_update_ptr].major = f->lower;
-                led_pwm_val[fader_update_ptr].minor = 0;
-                f->active = 0;
-                break;
-              case SETUP_LOWER:
-                // Bug/programming fix: make sure the delta is positive
-                if(f->delta < 0) {
-                  f->delta = -f->delta;
-                } else {
-                  // Setup fade to the lower bound from *below* the current lower bound; simply apply the new value
-                  led_pwm_val[fader_update_ptr].raw = newraw;
-                }
-                led_pwm_val[fader_update_ptr].raw = newraw;
-                break;
-            }
-          } else {
-            // Not below the lower bound or above the upper bound
-            if(e == SETUP_LOWER) {
-              // Setup to lower bound complete; cap to lower bound
-              led_pwm_val[fader_update_ptr].major = f->lower;
-              led_pwm_val[fader_update_ptr].minor = 0;
+
+      fader_struct_t * const f = (fader_struct_t * const)&fader[fader_update_ptr];
+      const effect_enum_t    e = f->reload;
+      if(f->active) {
+        // Use a 32 bit to detect over and underflow on the 16 bit PWM counter (note that the uper 8 bits are used for PWM, this allows sub-stepping)
+        int32_t newraw = (int32_t)_led_brightness[fader_update_ptr].raw + (int32_t)f->delta;
+        int16_t newmajor = newraw >> 8; // Remove the lower byte to obtain the PWM value (note that the first 8 bits are valid, upper bits are only needed to detect overflow)
+        if(newmajor > f->upper) {
+          // Upper-bound tripped, handle effect
+          switch(e) {
+            case NONE:
+              // No effect, cap to upper and hold
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->upper, 0);
+              //led_pwm_val[fader_update_ptr].major = f->upper;
+              //led_pwm_val[fader_update_ptr].minor = 0;
               f->active = 0;
-            } else {
-              // Normal fade step: apply new value
-              led_pwm_val[fader_update_ptr].raw = newraw;
-            }
+              break;
+            case JUMP:
+              // Jump to lower bound
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
+              //led_pwm_val[fader_update_ptr].major = f->lower;
+              //led_pwm_val[fader_update_ptr].minor = 0;
+              break;
+            case INVERT:
+            case UPPER_INVERT:
+              // Cap to upper - delta (upper bound was used last update)
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->upper - (f->delta >> 8), 0 - (f->delta & 0xFF));
+              //led_pwm_val[fader_update_ptr].major = f->upper - (f->delta >> 8);
+              //led_pwm_val[fader_update_ptr].minor = 0 - (f->delta & 0xFF);
+              f->delta = -f->delta;
+              break;
+            case LOWER_INVERT:
+              // Already inverted once, disable fader
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->upper, 0);
+              //led_pwm_val[fader_update_ptr].major = f->upper;
+              //led_pwm_val[fader_update_ptr].minor = 0;
+              f->active = 0;
+              break;
+          }
+        } else if(newmajor < f->lower) {
+          // Lower bound tripped, handle effect
+          switch(e) {
+            case NONE:
+              // No effect, cap to lower and hold
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
+              //led_pwm_val[fader_update_ptr].major = f->lower;
+              //led_pwm_val[fader_update_ptr].minor = 0;
+              f->active = 0;
+              break;
+            case JUMP:
+              // Jump to upper bound
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->upper, 0);
+              //led_pwm_val[fader_update_ptr].major = f->upper;
+              //led_pwm_val[fader_update_ptr].minor = 0;
+              break;
+            case INVERT:
+            case LOWER_INVERT:
+              // Cap to lower + delta (lower bound was used last update)
+              f->delta = -f->delta; // First invert delta, its now positive
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->lower + (f->delta >> 8), f->delta & 0xFF);
+              //led_pwm_val[fader_update_ptr].major = f->lower + (f->delta >> 8);
+              //led_pwm_val[fader_update_ptr].minor = (f->delta & 0xFF);
+              break;
+            case UPPER_INVERT:
+              // Already inverted once, disable fader
+              SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
+              //led_pwm_val[fader_update_ptr].major = f->lower;
+              //led_pwm_val[fader_update_ptr].minor = 0;
+              f->active = 0;
+              break;
+            case SETUP_LOWER:
+              // Bug/programming fix: make sure the delta is positive (so this LED fades in)
+              if(f->delta < 0) {
+                f->delta = -f->delta;
+              }
+              // Still below the target brightness, apply the value
+              //led_pwm_val[fader_update_ptr].raw = newraw;
+              SET_LED_BRIGHTNESS_RAW(fader_update_ptr, newraw);
+              break;
+          }
+        } else {
+          // Not below the lower bound or above the upper bound
+          if(e == SETUP_LOWER) {
+            // Setup to lower bound complete; cap to lower bound
+            SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
+            //led_pwm_val[fader_update_ptr].major = f->lower;
+            //led_pwm_val[fader_update_ptr].minor = 0;
+            f->active = 0;
+          } else {
+            // Normal fade step: apply new value
+            SET_LED_BRIGHTNESS_RAW(fader_update_ptr, newraw);
+            //led_pwm_val[fader_update_ptr].raw = newraw;
           }
         }
-
-        // Fader updated, move the pointer, when it hits -1 all faders are done
-        fader_update_ptr--;
+      } else if(_btn0_active) {
+        // Fader inactive but btn0 is pressed; update the real PWM value to the new brightness
+        _SET_SCALED_PWM(fader_update_ptr, GET_LED_BRIGHTNESS(fader_update_ptr).major);
       }
 
+      // Make sure to clear the button state at the last update
+      if(fader_update_ptr == 0)
+        _btn0_active = 0;
+
+      // Fader updated, move the pointer, when it hits -1 all faders are done
+      fader_update_ptr--;
+
       // When measuring PWM + fader duration, stop here
-       MEASUREMENT_ISR_ALL_STOP;
+      MEASUREMENT_ISR_ALL_STOP;
 
       #ifdef SUPPORT_NESTED_ISR
         // End of fader updates; clear the flag (note: _isr_running is not touched as it was cleared before and might have been set again in a nested interrupt)

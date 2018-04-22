@@ -27,12 +27,14 @@ typedef struct {
 
 /**
  * Running animation: one or more 'runners' run around the heart turning on LEDs as they go.
+ * @param setup When non-zero, fade all LEDs to the lower brightness bound for this animation, useful for an animation transition
+ * @param auto_loop When 1, keep looping the animation until aborted
  * @param dir Direction for the animation, valid values are -1 and 1
  * @param runners Number of parallel runners, valid range is 1 to 8
  * @param cross Whether alternating runners move in the same direction or counter-directions
  * @param erasers Whether alternating runners should 'erasers'; these runners fade out LEDs rather than in
  * @param s Configure all LEDs with brightness bounds and fade to them at the start of the animation, only needed when switching animation types
  */
-void animate_run_around(const int8_t setup = 1, const int8_t dir = 1, const int8_t runners = 1, const int8_t cross = 0, const int8_t erasers = 0, run_around_setting_struct_t *s = NULL);
+void animate_run_around(const int8_t setup = 1, const int8_t auto_loop = 1, const int8_t dir = 1, const int8_t runners = 1, const int8_t cross = 0, const int8_t erasers = 0, run_around_setting_struct_t *s = NULL);
 
 #endif

@@ -11,6 +11,11 @@
 
 #include "stdint.h"
 
+// -------------------------- Transition Settings ---------------------------
+
+// Duration of each animation before moving to the next one
+#define ANIMATION_DURATION_S 20
+
 // ------------------------- Debug Settings ----------------------------
 
 // Define to enable profiling support; slows down the program and enables serial debugging
@@ -34,6 +39,10 @@
 #define PIN_LED_START 2
 #define NUM_LEDS 10
 #define PIN_LED_END (PIN_LED_START+NUM_LEDS)
+
+// ---------------------------- Button Settings --------------------------------
+#define PIN_BTN0 12
+#define PIN_BTN1 13
 
 // ------------------------- PWM and fader Settings ----------------------------
 
@@ -154,4 +163,4 @@ static inline void setup_fade_to_lower(fader_struct_t *f, duint8_t *val) {
   }
 }
 
-#endif _HEART_SETTINGS_H_
+#endif

@@ -9,6 +9,7 @@
 
 #include "heart_ani_dropfill.h"
 #include "heart_isr.h"
+#include "heart_delay.h"
 
 /**
  * Drip heart: the top of the heart 'fills' up until a 'drop' falls over the edge, filling up the bottom of the heart.
@@ -19,7 +20,7 @@
  * @param delay_fill_ms Whether alternating runners move in the same direction or counter-directions
  * @param delay_drop_ms Whether alternating runners should 'erasers'; these runners fade out LEDs rather than in
  */
-void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000, const int16_t delay_fill_ms = 200, const int16_t delay_drop_ms = 200) {
+void animate_dropfill(const int8_t setup = 1, const int16_t delay_between_ms = 3000, const int16_t delay_fill_ms = 200, const int16_t delay_drop_ms = 200) {
   const uint16_t ani_delay_ms  = 25;
   const uint16_t dur_top_fill  = 100; //300;
   const uint16_t dur_drop      = 20;
@@ -49,6 +50,9 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
 
   enum { TOP_FILL, DROP, SPLASH_END, IDLE } state = IDLE;
 
+  // Enable the delay function if it was turned off by button press to abort the previous animation
+  enable_heart_delay();
+
   // Setup phase: mark all LEDs active and fade to the lower bound
   if(setup) {
     for(int8_t l=0; l < NUM_LEDS; l++) {
@@ -58,7 +62,7 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
       fader[l].delta  = fade_speed_major << 8;
       fader[l].reload = NONE;
       // Configure the faders to fade to the target intensity regardless of current state
-      setup_fade_to_lower(&fader[l], &led_pwm_val[l]);
+      setup_fade_to_lower(&fader[l], &GET_LED_BRIGHTNESS(l));
     }
   }
 
@@ -91,9 +95,9 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
        }
        
        // Set the PWM brightness
-       led_pwm_val[LED_LAYER0].major    = top_layer0;
-       led_pwm_val[LED_LAYER1[0]].major = top_layer1;
-       led_pwm_val[LED_LAYER1[1]].major = top_layer1;
+       SET_LED_BRIGHTNESS_MAJOR(LED_LAYER0,    top_layer0);
+       SET_LED_BRIGHTNESS_MAJOR(LED_LAYER1[0], top_layer1);
+       SET_LED_BRIGHTNESS_MAJOR(LED_LAYER1[1], top_layer1);
        
        // Detect when done
        if(cnt >= dur_top_fill) {
@@ -123,8 +127,8 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
         // 4 layers of dropping
         if(cnt  <= dur_drop_step * 1) {
           // First layer of dropping
-          led_pwm_val[3].major = fade_upper;
-          led_pwm_val[7].major = fade_upper;
+          SET_LED_BRIGHTNESS_MAJOR(3, fade_upper);
+          SET_LED_BRIGHTNESS_MAJOR(7, fade_upper);
           if(cnt == dur_drop_step * 1) {
             // Fill counter if bin 3 is not full yet
             if(fill[2] >= fill_max && fill[3] < fill_max) {
@@ -140,8 +144,8 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
           }
         } else if(cnt  <= dur_drop_step * 2) {
           // Second layer of dropping
-          led_pwm_val[2].major = fade_upper;
-          led_pwm_val[8].major = fade_upper;
+          SET_LED_BRIGHTNESS_MAJOR(2, fade_upper);
+          SET_LED_BRIGHTNESS_MAJOR(8, fade_upper);
           if(cnt == dur_drop_step * 2) {
             // Turn off previous layer on the switch point
             fader[3].active = 0;
@@ -167,8 +171,8 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
           }
         } else if(cnt  <= dur_drop_step * 3) {
           // Third layer of dropping
-          led_pwm_val[1].major = fade_upper;
-          led_pwm_val[9].major = fade_upper;
+          SET_LED_BRIGHTNESS_MAJOR(1, fade_upper);
+          SET_LED_BRIGHTNESS_MAJOR(9, fade_upper);
           if(cnt == dur_drop_step * 3) {
             // Turn off previous layer on the switch point
             fader[2].active = 0;
@@ -194,7 +198,7 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
           }
         } else if(cnt <= dur_drop_step * 4) {
           // Last layer of dropping: heart bottom center
-          led_pwm_val[0].major = fade_upper;
+          SET_LED_BRIGHTNESS_MAJOR(0, fade_upper);
           if(cnt == dur_drop_step * 4) {
             // Turn off previous layer on the switch point
             fader[1].active = 0;
@@ -277,6 +281,7 @@ void animate_fill(const int8_t setup = 1, const int16_t delay_between_ms = 3000,
     }
     
     // Delay between steps of the animation
-    delay(ani_delay_ms);
+    if(heart_delay(ani_delay_ms))
+      return; // When 1, the delay is aborted and this animation will end
   }
 }
