@@ -32,8 +32,9 @@ static run_around_setting_struct_t run_around_default = {
  * @param cross Whether alternating runners move in the same direction or counter-directions
  * @param erasers Whether alternating runners should 'erasers'; these runners fade out LEDs rather than in
  * @param s Configure all LEDs with brightness bounds and fade to them at the start of the animation, only needed when switching animation types
+ * @return 1 when the animation was aborted, 0 when it completed (note that with auto_loop it will never return unless aborted)
  */
-void animate_run_around(const int8_t setup = 1, const int8_t auto_loop = 1, const int8_t dir = 1, const int8_t runners = 1, const int8_t cross = 0, const int8_t erasers = 0, run_around_setting_struct_t *s = NULL) {
+int8_t animate_run_around(const int8_t setup = 1, const int8_t auto_loop = 1, const int8_t dir = 1, const int8_t runners = 1, const int8_t cross = 0, const int8_t erasers = 0, run_around_setting_struct_t *s = NULL) {
   // When no settings are given, use the default ones
   if(s == NULL) {
     s = &run_around_default;
@@ -122,7 +123,7 @@ void animate_run_around(const int8_t setup = 1, const int8_t auto_loop = 1, cons
       // Animation step complete, do delay
       //delay(s->delay_current_ms);
       if(heart_delay(s->delay_current_ms))
-        return; // When the delay aborts, stop the animation
+        return 1; // When the delay aborts, stop the animation
       
       // Update delay amount if requested
       if(delay_delta != 0 && s->delay_current_ms != delay_tgt_ms) {
@@ -140,4 +141,6 @@ void animate_run_around(const int8_t setup = 1, const int8_t auto_loop = 1, cons
       }
     }
   } while(auto_loop); // when 0, only animate one round, when 1 it loops until aborted
+  
+  return 0;
 }

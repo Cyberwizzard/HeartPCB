@@ -1,5 +1,5 @@
 /**
- * heart_delay.cpp - Heart PCB Project - Delay function which supports aborting the delay if needed
+ * heart_delay.h - Heart PCB Project - Delay function which supports aborting the delay if needed
  * 
  * @author  Berend Dekens <berend@cyberwizzard.nl>
  * @version 1

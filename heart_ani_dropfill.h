@@ -14,11 +14,10 @@
 
 /**
  * Drip heart: the top of the heart 'fills' up until a 'drop' falls over the edge, filling up the bottom of the heart.
+ * Note: hardcoded for 10 LED groups.
+ *
  * @param setup When 1; the state struct is cleared and the animation starts over
- * @param delay_between_ms Number of parallel runners, valid range is 1 to 8
- * @param delay_fill_ms Whether alternating runners move in the same direction or counter-directions
- * @param delay_drop_ms Whether alternating runners should 'erasers'; these runners fade out LEDs rather than in
  */
-void animate_dropfill(const int8_t setup = 1, const int16_t delay_between_ms = 3000, const int16_t delay_fill_ms = 200, const int16_t delay_drop_ms = 200);
+void animate_dropfill(const int8_t setup = 1);
 
 #endif

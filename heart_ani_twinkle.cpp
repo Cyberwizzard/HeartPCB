@@ -1,5 +1,5 @@
 /**
- * heart_ani_twinkle.h - Heart PCB Project - Animation with twinkling LEDs
+ * heart_ani_twinkle.cpp - Heart PCB Project - Animation with twinkling LEDs
  * 
  * @author  Berend Dekens <berend@cyberwizzard.nl>
  * @version 1

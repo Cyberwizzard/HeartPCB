@@ -14,7 +14,7 @@
 // -------------------------- Transition Settings ---------------------------
 
 // Duration of each animation before moving to the next one
-#define ANIMATION_DURATION_S 20
+#define ANIMATION_DURATION_S 10
 
 // ------------------------- Debug Settings ----------------------------
 
@@ -40,16 +40,20 @@
 #define NUM_LEDS 10
 #define PIN_LED_END (PIN_LED_START+NUM_LEDS)
 
+// ---------------------------- Demo Settings --------------------------------
+// Set this to the number of seconds before automatically switching effects (only when demo mode is on)
+#define EFFECT_DURATION_S 20
+
 // ---------------------------- Button Settings --------------------------------
-#define PIN_BTN0 12
-#define PIN_BTN1 13
+#define PIN_BTN0 13
+#define PIN_BTN1 12
 
 // ------------------------- PWM and fader Settings ----------------------------
 
 // PWM frequency, setting this to 100 means PWM_STEPS * 100 calls per second to callback() to update the PWM, and LEDs will turn off and on 100 times a second
 // More is better (prevents flicker), but too high will eat up CPU without leaving time for the animation resulting in choppy animations
-// Default: 200 Hz
-#define TIMER_FREQ 100
+// Default: 75 Hz
+#define TIMER_FREQ 75
 
 // Fader update frequency, setting this to 10 means a fade in or out is updated 10 times per second. Note that changing this setting changes the speed of a fade.
 // Note: since the PWM frequency and length dictates the timer interval, this setting will be converted in a derrived frequency.
@@ -71,7 +75,11 @@
 #define ISR_MINIMUM_INTERVAL_US 34
 
 // This define is only needed during development and benchmarking of the ISR (interrupt routine) to enable nested interrupts; after development it should be disabled
-#define SUPPORT_NESTED_ISR
+//#define SUPPORT_NESTED_ISR
+
+// Compute how many ISR fader ticks (which happen once every 255 ISR calls) make up the duration of the demo mode delay between effects
+// FIXME also this is off by a factor 6
+#define TIMER_DEMO_CNT_MAX (uint32_t)(((uint64_t)EFFECT_DURATION_S * 1000000 * 6) / ((uint64_t)FADER_UPDATE_INTERVAL_US))
 
 // ------------------------- Error Mode Settings ----------------------------
 
@@ -94,13 +102,16 @@
 // Code 4 - The PWM frequency is set too high resulting in an ISR interval which is lower than the known working limit
 #define ERR_ISR_INTERVAL_TOO_SMALL 4
 
+// ------------------------- EEPROM Settings ----------------------------
+
+// Define to enable storing of settings in EEPROM - when not defined, the entire EEPROM library is excluded and all eeprom functions become stubs
+#define SUPPORT_EEPROM
 
 
 
 
 
-
-
+// ------------------------- Sanity Checks on Settings ----------------------------
 
 // Sanity: make sure the selected settings make sense
 #if FADER_UPDATE_FREQ > TIMER_FREQ
@@ -108,7 +119,7 @@
 #endif
 
 #if FADER_UPDATE_FREQ < 10
-#error "FADER_UPDATE_FREQ is less than 10 Hz (this will result in visible jumps in brightness during fading)"
+//#error "FADER_UPDATE_FREQ is less than 10 Hz (this will result in visible jumps in brightness during fading)"
 #endif
 
 #if FADER_UPDATE_FREQ * 3 > TIMER_FREQ
@@ -162,5 +173,8 @@ static inline void setup_fade_to_lower(fader_struct_t *f, duint8_t *val) {
     f->active = 1;
   }
 }
+
+// Number of animations in total - used in the main loop and the EEPROM sanity check
+#define NUM_ANIMATIONS 9
 
 #endif

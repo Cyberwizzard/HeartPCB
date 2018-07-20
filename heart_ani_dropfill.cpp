@@ -16,13 +16,10 @@
  * Note: hardcoded for 10 LED groups.
  *
  * @param setup When 1; the state struct is cleared and the animation starts over
- * @param delay_between_ms Number of parallel runners, valid range is 1 to 8
- * @param delay_fill_ms Whether alternating runners move in the same direction or counter-directions
- * @param delay_drop_ms Whether alternating runners should 'erasers'; these runners fade out LEDs rather than in
  */
-void animate_dropfill(const int8_t setup = 1, const int16_t delay_between_ms = 3000, const int16_t delay_fill_ms = 200, const int16_t delay_drop_ms = 200) {
+void animate_dropfill(const int8_t setup = 1) {
   const uint16_t ani_delay_ms  = 25;
-  const uint16_t dur_top_fill  = 100; //300;
+  const uint16_t dur_top_fill  = 80; //300;
   const uint16_t dur_drop      = 20;
   const uint16_t dur_splash    = 100;
   const uint16_t dur_idle      = 10; //100;
@@ -32,7 +29,7 @@ void animate_dropfill(const int8_t setup = 1, const int16_t delay_between_ms = 3
   const uint8_t fade_speed_major = 40;
   const uint8_t fade_filled_low  = 80;
   
-  const uint16_t fill_max      = 2;
+  const uint16_t fill_max      = 1;
   
   // Hardcoded LED indices denoting the top of the heart and the groups next to the top center
   const uint8_t LED_LAYER0       = 5;

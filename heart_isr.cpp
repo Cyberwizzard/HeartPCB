@@ -27,12 +27,26 @@
     #define MEASUREMENT_ISR_PWM_STOP  MEASUREMENT_STOP
     #define MEASUREMENT_ISR_ALL_START {}
     #define MEASUREMENT_ISR_ALL_STOP  {}
+    #define MEASUREMENT_ISR_ANY_START {}
+    #define MEASUREMENT_ISR_ANY_STOP  {}
   #else
-    // Defines to measure the PWM + fader of the ISR
-    #define MEASUREMENT_ISR_PWM_START {}
-    #define MEASUREMENT_ISR_PWM_STOP  {}
-    #define MEASUREMENT_ISR_ALL_START MEASUREMENT_START
-    #define MEASUREMENT_ISR_ALL_STOP  MEASUREMENT_STOP
+    #if 1
+      // Defines to measure the PWM + fader of the ISR
+      #define MEASUREMENT_ISR_PWM_START {}
+      #define MEASUREMENT_ISR_PWM_STOP  {}
+      #define MEASUREMENT_ISR_ALL_START MEASUREMENT_START
+      #define MEASUREMENT_ISR_ALL_STOP  MEASUREMENT_STOP
+      #define MEASUREMENT_ISR_ANY_START {}
+      #define MEASUREMENT_ISR_ANY_STOP  {}
+    #else
+      // Defines to measure the ISR regardless of a PWM or PWM+fader tick
+      #define MEASUREMENT_ISR_PWM_START {}
+      #define MEASUREMENT_ISR_PWM_STOP  {}
+      #define MEASUREMENT_ISR_ALL_START {}
+      #define MEASUREMENT_ISR_ALL_STOP  {}
+      #define MEASUREMENT_ISR_ANY_START MEASUREMENT_START
+      #define MEASUREMENT_ISR_ANY_STOP  MEASUREMENT_STOP
+    #endif
   #endif
 #else
   // No measurement support; empty macros for all measurement modes
@@ -40,6 +54,8 @@
   #define MEASUREMENT_ISR_PWM_STOP  {}
   #define MEASUREMENT_ISR_ALL_START {}
   #define MEASUREMENT_ISR_ALL_STOP  {}
+  #define MEASUREMENT_ISR_ANY_START {}
+  #define MEASUREMENT_ISR_ANY_STOP  {}
 #endif
 
 #define SOFT_PWM_LED(led_pin, led_brightness) {          \
@@ -129,9 +145,24 @@ fader_struct_t fader [NUM_LEDS];
 
 // Button state tracking
 const uint8_t     btn_debounce_limit = 2; // Number of consecutive readings to debounce the press 
+const uint8_t     btn_hold_limit = 50;    // Number of consecutive readings to upgrade the press to a hold
 volatile uint8_t  _btn0_down_cnt = 0;
 volatile uint8_t  _btn1_down_cnt = 0;
 volatile uint8_t  _btn0_active = 0;
+
+volatile uint8_t  btn0_hold = 0;           // Flag to indicate the button was held down
+volatile uint8_t  btn1_hold = 0;           // Flag to indicate the button was held down
+
+// Demo controls
+volatile uint8_t demo_mode = 0; // Flag to track if the demo mode (auto-switch between effects) is enabled, 0 = off, anything higher is a duration multiplier
+uint8_t  demo_multi_cnt = 0;   // Multiplier count to increase the duration until the next animation
+uint16_t demo_tick_cnt = 0;    // Count number of ISR ticks to determine if the effects need to change (only increased when demo_mode != 0)
+
+// Dummy ISR to verify the interrupt are firing as intended
+//void heart_isr() {
+//  MEASUREMENT_START;
+//  MEASUREMENT_STOP;
+//}
 
 /**
  * Timer interrupt routine; provides software PWM and LED fading logic, needs to be fast in order to
@@ -179,9 +210,11 @@ void heart_isr() {
       sei();
     #endif
 
+    // Profiling measurement starts (note that at most one of these macros is defined at compile time)
     MEASUREMENT_ISR_PWM_START; // Measurement start when measuring PWM part only; every tick
     if(fader_update_ptr >= 0)
       MEASUREMENT_ISR_ALL_START; // Measurement start when measuring PWM + fader; every FADER_UPDATE_TICKS ticks
+    MEASUREMENT_ISR_ANY_START;
 
     // Increase PWM counter
     _pwm_step++;
@@ -252,43 +285,57 @@ void heart_isr() {
     PORTD = pin0_7;
     PORTB = pin8_13;
 
+
     // ------------------------------- fader controls -------------------------------------------
     // Increase the counter for the fader interval
     fader_interval_cnt++;
-
-    // Fader interval reached, start updating all faders, one at a time
-    if(fader_interval_cnt >= FADER_UPDATE_TICKS) {
-      fader_update_ptr = NUM_LEDS - 1;
-      // Clear the counter
-      fader_interval_cnt = 0;
-
+    
+    // Do button handling one 'tick' before starting the faders
+    if(fader_interval_cnt >= FADER_UPDATE_TICKS - 1) {
       // Sample and handle the button inputs at the same frequency as the faders get updated
       volatile uint8_t btn0_pressed = PINB & BTN0_MASK;
       volatile uint8_t btn1_pressed = PINB & BTN1_MASK;
-      // Only process pin state when the button 0 press logic is not active
+      
+      // Only process btn0 state changes if the PWM computations are not active
       if(!_btn0_active) {
         if(btn0_pressed) {
-          if(_btn0_down_cnt < btn_debounce_limit) {
+          if(_btn0_down_cnt < btn_hold_limit) {
+              _btn0_down_cnt++;
+          } else if(_btn0_down_cnt == btn_hold_limit) {
+            // Reached hold limit - flag that the button is held down
+            btn0_hold = 1;
+            
+            // Disable current animation delay so it aborts and control returns to the main loop
+            disable_heart_delay();
+            
+            // Add one more step to only run this code once when the hold is detected
             _btn0_down_cnt++;
-          } else if(_btn0_down_cnt == btn_debounce_limit){
-            // First trigger of the button 0 press - change the PWM scale
-            if(GET_BRIGHTNESS_SCALE < 5) {
-              SET_BRIGHTNESS_SCALE(GET_BRIGHTNESS_SCALE + 1);
-            } else {
-              // Reset to full brightness
-              SET_BRIGHTNESS_SCALE(0);
-            }
-
-            // Increase the counter to only run this logic once
-            _btn0_down_cnt = btn_debounce_limit+1;
-
-            // Mark btn0 active; during the fader updates, the PWM values are recomputed, also for inactive faders
-            _btn0_active = 1;
           }
         } else {
-          _btn0_down_cnt = 0;
-        }
-      }
+          // Make sure the button was pressed for even a single cycle...
+          if(_btn0_down_cnt > 0) {
+            // Potential button release, determine what it was
+            if(_btn0_down_cnt < btn_hold_limit) {
+              // Short button press, change brightness
+
+              // First trigger of the button 0 press - change the PWM scale
+              if(GET_BRIGHTNESS_SCALE < 5) {
+                SET_BRIGHTNESS_SCALE(GET_BRIGHTNESS_SCALE + 1);
+              } else {
+                // Reset to full brightness
+                SET_BRIGHTNESS_SCALE(0);
+              }
+            
+              // Mark btn0 active to disable button response during the fader updates, the PWM values are recomputed, also for inactive faders
+              _btn0_active = 1;
+            }
+            // Clear the hold down flag (if it was set)
+            btn0_hold = 0;
+            // Clear the counter
+            _btn0_down_cnt = 0;
+          } 
+        } 
+      } 
 
       // Handle if button 1 is pressed
       if(btn1_pressed) {
@@ -300,10 +347,44 @@ void heart_isr() {
 
           // Increase the counter to only run this logic once
           _btn1_down_cnt = btn_debounce_limit+1;
+          
+          // Reset demo mode counters to make sure they start anew when switching animations
+          demo_tick_cnt = 0;
+          demo_multi_cnt = 0;
         }
       } else {
         _btn1_down_cnt = 0;
       }
+
+      // Demo mode support
+      if(demo_mode) {
+        demo_tick_cnt++;
+        if(demo_tick_cnt >= TIMER_DEMO_CNT_MAX) {
+          // Demo duration expired - reset timer
+          demo_tick_cnt = 0;
+          // Increase duration multiply counter
+          demo_multi_cnt++;
+          // See if the multiplier is now matching the demo_mode setting
+          if(demo_multi_cnt >= demo_mode) {
+            // Reset the multiplier counter
+            demo_multi_cnt = 0;
+          
+            // Disable the animation delay so any animation currently active aborts
+            disable_heart_delay();
+          }
+        }
+      } else {
+        // Reset counters
+        demo_tick_cnt = 0;
+        demo_multi_cnt = 0;
+      }
+    }
+
+    // Fader interval reached, start updating all faders, one at a time
+    if(fader_interval_cnt >= FADER_UPDATE_TICKS) {
+      fader_update_ptr = NUM_LEDS - 1;
+      // Clear the counter
+      fader_interval_cnt = 0;
 
       // When measuring PWM + fader, on the first fader we missed the PWM part, but measure the fader part to make sure the stops match up
       MEASUREMENT_ISR_ALL_START;
@@ -312,15 +393,17 @@ void heart_isr() {
     MEASUREMENT_ISR_PWM_STOP; // When measuring PWM only, stop measuring here
 
     if(fader_update_ptr >= 0) {
+      #ifdef SUPPORT_NESTED_ISR
       // Error handling; when this logic is so slow it results in nested fader logic, the program will lock up
       if(_isr_fader) {
-        _err = ERR_NESTED_FADER;
-        return;
+        //_err = ERR_NESTED_FADER;
+        //return;
       }
       
       // Update fader; mark fader ISR active and PWM ISR complete
       _isr_fader = 1;    // Note: needs to be set *before* clearing _isr_running
       _isr_running = 0;
+      #endif
 
       fader_struct_t * const f = (fader_struct_t * const)&fader[fader_update_ptr];
       const effect_enum_t    e = f->reload;
@@ -334,29 +417,21 @@ void heart_isr() {
             case NONE:
               // No effect, cap to upper and hold
               SET_LED_BRIGHTNESS(fader_update_ptr, f->upper, 0);
-              //led_pwm_val[fader_update_ptr].major = f->upper;
-              //led_pwm_val[fader_update_ptr].minor = 0;
               f->active = 0;
               break;
             case JUMP:
               // Jump to lower bound
               SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
-              //led_pwm_val[fader_update_ptr].major = f->lower;
-              //led_pwm_val[fader_update_ptr].minor = 0;
               break;
             case INVERT:
             case UPPER_INVERT:
               // Cap to upper - delta (upper bound was used last update)
               SET_LED_BRIGHTNESS(fader_update_ptr, f->upper - (f->delta >> 8), 0 - (f->delta & 0xFF));
-              //led_pwm_val[fader_update_ptr].major = f->upper - (f->delta >> 8);
-              //led_pwm_val[fader_update_ptr].minor = 0 - (f->delta & 0xFF);
               f->delta = -f->delta;
               break;
             case LOWER_INVERT:
               // Already inverted once, disable fader
               SET_LED_BRIGHTNESS(fader_update_ptr, f->upper, 0);
-              //led_pwm_val[fader_update_ptr].major = f->upper;
-              //led_pwm_val[fader_update_ptr].minor = 0;
               f->active = 0;
               break;
           }
@@ -366,29 +441,21 @@ void heart_isr() {
             case NONE:
               // No effect, cap to lower and hold
               SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
-              //led_pwm_val[fader_update_ptr].major = f->lower;
-              //led_pwm_val[fader_update_ptr].minor = 0;
               f->active = 0;
               break;
             case JUMP:
               // Jump to upper bound
               SET_LED_BRIGHTNESS(fader_update_ptr, f->upper, 0);
-              //led_pwm_val[fader_update_ptr].major = f->upper;
-              //led_pwm_val[fader_update_ptr].minor = 0;
               break;
             case INVERT:
             case LOWER_INVERT:
               // Cap to lower + delta (lower bound was used last update)
               f->delta = -f->delta; // First invert delta, its now positive
               SET_LED_BRIGHTNESS(fader_update_ptr, f->lower + (f->delta >> 8), f->delta & 0xFF);
-              //led_pwm_val[fader_update_ptr].major = f->lower + (f->delta >> 8);
-              //led_pwm_val[fader_update_ptr].minor = (f->delta & 0xFF);
               break;
             case UPPER_INVERT:
               // Already inverted once, disable fader
               SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
-              //led_pwm_val[fader_update_ptr].major = f->lower;
-              //led_pwm_val[fader_update_ptr].minor = 0;
               f->active = 0;
               break;
             case SETUP_LOWER:
@@ -397,7 +464,6 @@ void heart_isr() {
                 f->delta = -f->delta;
               }
               // Still below the target brightness, apply the value
-              //led_pwm_val[fader_update_ptr].raw = newraw;
               SET_LED_BRIGHTNESS_RAW(fader_update_ptr, newraw);
               break;
           }
@@ -406,17 +472,14 @@ void heart_isr() {
           if(e == SETUP_LOWER) {
             // Setup to lower bound complete; cap to lower bound
             SET_LED_BRIGHTNESS(fader_update_ptr, f->lower, 0);
-            //led_pwm_val[fader_update_ptr].major = f->lower;
-            //led_pwm_val[fader_update_ptr].minor = 0;
             f->active = 0;
           } else {
             // Normal fade step: apply new value
             SET_LED_BRIGHTNESS_RAW(fader_update_ptr, newraw);
-            //led_pwm_val[fader_update_ptr].raw = newraw;
           }
         }
       } else if(_btn0_active) {
-        // Fader inactive but btn0 is pressed; update the real PWM value to the new brightness
+         // Fader inactive but btn0 is pressed; update the real PWM value to the new brightness
         _SET_SCALED_PWM(fader_update_ptr, GET_LED_BRIGHTNESS(fader_update_ptr).major);
       }
 
@@ -433,14 +496,14 @@ void heart_isr() {
       #ifdef SUPPORT_NESTED_ISR
         // End of fader updates; clear the flag (note: _isr_running is not touched as it was cleared before and might have been set again in a nested interrupt)
         _isr_fader = 0;
-      #endif
+      #endif 
     } else {
       #ifdef SUPPORT_NESTED_ISR
         // No fader update, clear ISR active flag for the PWM logic part
         _isr_running = 0;
       #endif
     }
-
     
+    MEASUREMENT_ISR_ANY_STOP;
   }
 }

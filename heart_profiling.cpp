@@ -14,6 +14,6 @@
   // Profiling code; records the start and stop times of the ISR
   volatile unsigned long starts [NUM_MEASUREMENTS];
   volatile unsigned long stops  [NUM_MEASUREMENTS];
-  volatile uint8_t       measure_start, measure_stop;
+  volatile uint16_t      measure_start, measure_stop;
 
 #endif

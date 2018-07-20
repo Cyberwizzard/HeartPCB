@@ -23,6 +23,13 @@ extern volatile uint8_t  _raw_scaler;
 // special type controlling the faders per LED
 extern fader_struct_t fader [NUM_LEDS];
 
+// flag to enable or disable the demo mode (0 = disabled, anything higher is a duration multiplier)
+extern volatile uint8_t demo_mode;
+
+// flags to track that a button is held down
+extern volatile uint8_t btn0_hold;
+//extern volatile uint8_t btn1_hold; - not yet implemented
+
 /**
  * Timer interrupt routine; provides software PWM and LED fading logic, needs to be fast in order to
  * function correctly.
