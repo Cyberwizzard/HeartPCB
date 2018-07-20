@@ -11,21 +11,16 @@
 
 #include "stdint.h"
 
-// -------------------------- Transition Settings ---------------------------
-
-// Duration of each animation before moving to the next one
-#define ANIMATION_DURATION_S 10
-
 // ------------------------- Debug Settings ----------------------------
 
 // Define to enable profiling support; slows down the program and enables serial debugging
 // Comment out when not debugging the project!
-#define SUPPORT_MEASUREMENTS
+//#define SUPPORT_MEASUREMENTS
 
 // Define to enable measurements within the ISR; slows down the critical section of the interrupt routine so
 // only enable when optimizing the interrupt routine.
 // Comment out when not debugging the project!
-#define SUPPORT_ISR_MEASUREMENTS
+//#define SUPPORT_ISR_MEASUREMENTS
 
 // ------------------------- LED Settings ----------------------------
 

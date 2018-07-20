@@ -36,8 +36,10 @@ void setup() {
   start_animation = eeprom_settings.animation_id;
   SET_BRIGHTNESS_SCALE(eeprom_settings.brightness);
   
-  delay(5000); // Delay slightly in case profiling is enabled so that the serial buffer can flush (otherwise the ISR will not be fast enough and we end up in an error on boot)
-  Serial.flush();
+  #ifdef SUPPORT_MEASUREMENTS
+    delay(200); // Delay slightly in case profiling is enabled so that the serial buffer can flush (otherwise the ISR will not be fast enough and we end up in an error on boot)
+    Serial.flush();
+  #endif
 
   //SET_LED_BRIGHTNESS_MAJOR(1, 120);
   //SET_LED_BRIGHTNESS_MAJOR(2, 40);
@@ -75,7 +77,7 @@ void setup() {
 //  SERPRINTLN("OK:1");
 }
 
-  run_around_setting_struct_t run_around_erasing = {
+  run_around_setting_struct_t run_around_erasing_speedup = {
     .fade_speed_major = 0,
     .fade_lower       = 0,
     .fade_upper       = 255,
@@ -83,6 +85,17 @@ void setup() {
     .offset           = 0,
     .delay_base_ms    = 220,
     .delay_tgt_ms     = 50,
+    .delay_step_ms    = 10
+  };
+
+  run_around_setting_struct_t run_around_erasing_speeddown = {
+    .fade_speed_major = 0,
+    .fade_lower       = 0,
+    .fade_upper       = 255,
+    .fade_up_start    = 255,
+    .offset           = 0,
+    .delay_base_ms    = 50,
+    .delay_tgt_ms     = 220,
     .delay_step_ms    = 10
   };
 
@@ -97,11 +110,22 @@ void setup() {
     .delay_step_ms    = 10
   };
 
+  run_around_setting_struct_t run_around_pingpong = {
+    .fade_speed_major = 20,
+    .fade_lower       = 10,
+    .fade_upper       = 255,
+    .fade_up_start    = 205,
+    .offset           = 0,
+    .delay_base_ms    = 50,
+    .delay_tgt_ms     = 50,
+    .delay_step_ms    = 0
+    //.delay_current_ms = 0
+  };
+
 int first_run = 1; // Flag to skip storing settings in the first run
 
 void loop() {
-  // Set the ISR for Timer 1
-  //Timer1.attachInterrupt(heart_isr);
+  int aborted = 0;
 
   // Second debug print; when the ISR is set way too high, the serial port dies - this canary will show this issue
   SERPRINTLN("OK:1");
@@ -126,16 +150,30 @@ void loop() {
           animate_beat();
           break;
         case 1:
-          // Animation of 1 runner going around the heart
-          animate_run_around();
+          // Animation of 1 runner going around the heart, reversing after 5 rounds
+          //animate_run_around(setup = 1, auto_loop = 1, dir = 1, runners = 1, cross = 0, erasers = 0, run_around_setting_struct_t *s = NULL);
+          aborted = 0;
+          while(!aborted) {
+            for(int x = 0; x < 10; x++) {
+              aborted = animate_run_around(x == 0, 0, (x < 5) ? 1 : -1, 1);
+              if(aborted) break;
+            }
+          }
           break;
         case 2:
-          // Setup, loop, 1 runner, reverse direction
-          animate_run_around(1, 1, -1); 
-          break;
-        case 3:
           // Setup, loop, 2 runners, standard direction
           animate_run_around(1, 1, 1, 2);
+          break;
+        case 3:
+          // Animation of 1 runner going around the heart, reversing each round
+          //animate_run_around(setup = 1, auto_loop = 1, dir = 1, runners = 1, cross = 0, erasers = 0, run_around_setting_struct_t *s = NULL);
+          aborted = 0;
+          while(!aborted) {
+            for(int x = 0; x < 10; x++) {
+              aborted = animate_run_around(x == 0, 0, (x % 2) ? 1 : -1, 1, 0, 0, &run_around_pingpong);
+              if(aborted) break;
+            }
+          }
           break;
         case 4:
           // 3 runners
@@ -147,7 +185,19 @@ void loop() {
           break;
         case 6:
           // 2 runners, one erasers
-          animate_run_around(1, 1, 1, 4, 0, 1, &run_around_erasing); // 2 runners, one erasers
+          aborted = 0;
+          while(!aborted) {
+            for(int i = 0; i < 10; i++) {
+              aborted = animate_run_around(i == 0, 0, 1, 4, 0, 1, &run_around_erasing_speedup); // 2 runners, one erasers
+              if(aborted) break;
+            }
+            if(aborted) break; // break out of while to prevent entering the next for()
+            for(int i = 0; i < 10; i++) {
+              aborted = animate_run_around(i == 0, 0, 1, 4, 0, 1, &run_around_erasing_speeddown); // 2 runners, one erasers
+              if(aborted) break;
+            }
+            
+          }
           break;
         case 7:
           // Slowly filling heart
