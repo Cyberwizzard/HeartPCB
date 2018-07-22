@@ -2,7 +2,9 @@
 Firmware and PCB layout for a heart shaped PCB with LEDs.
 
 ## About
-I designed this PCB and the corresponding firmware as a wedding present for all guests attending. The PCB has 18 LEDs, divided into 10 groups and is driven by a) an Arduino Pro Mini of b) statically lit by soldering some pads together.
+I designed this PCB and the corresponding firmware as a wedding present for all guests attending. The PCB is the size and shape of a standard coaster, so that it could be used during the party by all guests to put their glass on top of it. When they go home they get a small plastic back containing the components to complete the kit.
+
+The PCB has 18 LEDs, divided into 10 groups and is driven by a) an Arduino Pro Mini of b) statically lit by soldering some pads together.
 
 ## Option A
 The simple build involves 8 x 47 Ohm and 2 x 150 Ohm resistors, a USB mini connector and 18 red 3mm LEDs.
