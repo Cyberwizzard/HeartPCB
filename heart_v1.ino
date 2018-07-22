@@ -26,15 +26,20 @@ void setup() {
   SERPRINTLN(" cycles)");
   SERPRINT(FADER_UPDATE_TICKS);
   SERPRINTLN(" ticks between faders");
-  SERPRINT("DEmo ticks: ");
+  SERPRINT("Demo ticks: ");
   SERPRINTLN(TIMER_DEMO_CNT_MAX);
   
-  // Load settings from EEPROM (if its disabled, defaults are loaded)
-  eeprom_load();
-  // Apply settings
-  demo_mode = eeprom_settings.demo_mode;
-  start_animation = eeprom_settings.animation_id;
-  SET_BRIGHTNESS_SCALE(eeprom_settings.brightness);
+  // Allow skipping of EEPROM load by holding down a button on power-on
+  if(digitalRead(PIN_BTN0) == HIGH || digitalRead(PIN_BTN1) == HIGH) {
+    SERPRINTLN("Skipping EEPROM");
+  } else {
+    // Load settings from EEPROM (if its disabled, defaults are loaded)
+    eeprom_load();
+    // Apply settings
+    demo_mode = eeprom_settings.demo_mode;
+    start_animation = eeprom_settings.animation_id;
+    SET_BRIGHTNESS_SCALE(eeprom_settings.brightness);
+  }
   
   #ifdef SUPPORT_MEASUREMENTS
     delay(200); // Delay slightly in case profiling is enabled so that the serial buffer can flush (otherwise the ISR will not be fast enough and we end up in an error on boot)

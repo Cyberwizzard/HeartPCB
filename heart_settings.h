@@ -48,7 +48,7 @@
 // PWM frequency, setting this to 100 means PWM_STEPS * 100 calls per second to callback() to update the PWM, and LEDs will turn off and on 100 times a second
 // More is better (prevents flicker), but too high will eat up CPU without leaving time for the animation resulting in choppy animations
 // Default: 75 Hz
-#define TIMER_FREQ 75
+#define TIMER_FREQ 100
 
 // Fader update frequency, setting this to 10 means a fade in or out is updated 10 times per second. Note that changing this setting changes the speed of a fade.
 // Note: since the PWM frequency and length dictates the timer interval, this setting will be converted in a derrived frequency.
@@ -77,6 +77,9 @@
 #define TIMER_DEMO_CNT_MAX (uint32_t)(((uint64_t)EFFECT_DURATION_S * 1000000 * 6) / ((uint64_t)FADER_UPDATE_INTERVAL_US))
 
 // ------------------------- Error Mode Settings ----------------------------
+
+// Define to support error reporting - disable for production builds
+//#define SUPPORT_ERRORS
 
 // If something goes wrong, these 2 LEDs will be statically on
 #define PIN_LED_ERR0 2

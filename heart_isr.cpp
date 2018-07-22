@@ -177,6 +177,7 @@ void heart_isr() {
       _err = ERR_NESTED_PWM;
   #endif
   
+  #ifdef SUPPORT_ERRORS
   if(_err) {
     // Error mode, blink 2 LEDs on to indicate something went wrong
     // Start by driving all LEDs off except for the LED indicating the problem.
@@ -195,6 +196,8 @@ void heart_isr() {
 
     return;
   } else {
+  // End of error reporting if
+  #endif
     // -----------------------------------------------------------------------------------------------
     // --                                     software PWM                                          --
     // -- Note: has to complete in 1 interval of the Timer1 interrupt, as tracked by _isr_running.  --
@@ -505,5 +508,8 @@ void heart_isr() {
     }
     
     MEASUREMENT_ISR_ANY_STOP;
+  #ifdef SUPPORT_ERRORS
+    // When error reporting is on, close the scope of the error-or-normal if block
   }
+  #endif
 }
