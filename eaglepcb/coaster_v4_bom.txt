@@ -1,4 +1,4 @@
-Partlist exported from D:/Users/Documents/eagle/heart_coaster/coaster_v3.sch at 4-5-2018 10:43
+Partlist exported from D:/Users/Documents/eagle/heart_coaster/coaster_v4.sch at 4-5-2018 10:43
 
 1  x 1000uF POLARIZED CAPACITOR
 1  x USB CONNECTOR
