@@ -14,7 +14,7 @@ When using with an Arduino Pro Mini, there are a number of animations which are 
 
 The firmware saves the settings and state in the EEPROM (with write wear-levelling) every time the animation changes or the settings are changed.
 
-The component list is 8 x 47 Ohm, 2 x 150 Ohm, 12 x 10k Ohm, USB mini connector, 18 red 3mm LEDs, 2 x 6x6mm push buttons, 1 x Arduino Pro Mini (ATMEGA328 5V 16MHz)
+The component list is 8 x 47 Ohm, 2 x 150 Ohm, 12 x 10k Ohm, USB mini connector, 18 red 3mm LEDs, 2 x 5x5mm push buttons, 1 x 470uF or 1000uF capacitor, 1 x Arduino Pro Mini (ATMEGA328 5V 16MHz)
 
 ### Troubleshooting
 I had one board getting corrupted after the USB power bank feeding it got empty - my guess is EEPROM corruption. It got stuck loading some invalid stuff and the error LEDs kept turning on.
